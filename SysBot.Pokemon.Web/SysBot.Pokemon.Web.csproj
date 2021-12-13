@@ -9,12 +9,20 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="5.0.4" />
-    <PackageReference Include="PKHeX.Core" Version="21.11.21" />
+    <PackageReference Include="PKHeX.Core" Version="21.11.27" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SysBot.Base\SysBot.Base.csproj" />
     <ProjectReference Include="..\SysBot.Pokemon\SysBot.Pokemon.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="deps\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="SysBot.Base.dll">
+      <HintPath>deps\SysBot.Base.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>

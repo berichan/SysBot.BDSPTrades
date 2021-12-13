@@ -5,6 +5,7 @@ using Discord.WebSocket;
 using PKHeX.Core;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace SysBot.Pokemon.Discord
 {
@@ -73,13 +74,13 @@ namespace SysBot.Pokemon.Discord
                 pk.ResetPartyStats();
 
                 var sig = Context.User.GetFavor();
-                await AddTradeToQueueAsync(code, Context.User.Username, pk, sig, Context.User).ConfigureAwait(false);
+                await AddTradeToQueueAsync(code, Context.User.Username, new T[] { pk }, sig, Context.User).ConfigureAwait(false);
             }
 #pragma warning disable CA1031 // Do not catch general exception types
-            catch
+            catch (Exception e)
 #pragma warning restore CA1031 // Do not catch general exception types
             {
-                var msg = $"Oops! An unexpected problem happened with this Showdown Set:\n```{string.Join("\n", set.GetSetLines())}```";
+                var msg = $"Oops! An unexpected problem happened with this Showdown Set:\n```{string.Join("\n", set.GetSetLines())}```\n```{e.Message + e.StackTrace}```";
                 await ReplyAsync(msg).ConfigureAwait(false);
             }
         }
@@ -153,15 +154,26 @@ namespace SysBot.Pokemon.Discord
                 return;
             }
 
-            var att = await NetUtil.DownloadPKMAsync(attachment).ConfigureAwait(false);
-            var pk = GetRequest(att);
-            if (pk == null)
+            if (Context.Message.Attachments.Count() > Info.Hub.Config.Trade.MaximumAttachmentsAllowed && sig != RequestSignificance.Owner)
             {
-                await ReplyAsync("Attachment provided is not compatible with this module!").ConfigureAwait(false);
+                await ReplyAsync($"{usr.Mention} - You are limited to {Info.Hub.Config.Trade.MaximumAttachmentsAllowed} per trade.").ConfigureAwait(false);
                 return;
             }
 
-            await AddTradeToQueueAsync(code, usr.Username, pk, sig, usr).ConfigureAwait(false);
+            var attchList = new List<T>();
+            foreach (var attch in Context.Message.Attachments)
+            {
+                var att = await NetUtil.DownloadPKMAsync(attch).ConfigureAwait(false);
+                var pk = GetRequest(att);
+                if (pk == null)
+                {
+                    await ReplyAsync($"Attachment {attch.Filename} is not compatible with this module!").ConfigureAwait(false);
+                    return;
+                }
+                attchList.Add(pk);
+            }
+
+            await AddTradeToQueueAsync(code, usr.Username, attchList.ToArray(), sig, usr).ConfigureAwait(false);
         }
 
         private static T? GetRequest(Download<PKM> dl)
@@ -176,22 +188,25 @@ namespace SysBot.Pokemon.Discord
             };
         }
 
-        private async Task AddTradeToQueueAsync(int code, string trainerName, T pk, RequestSignificance sig, SocketUser usr)
+        private async Task AddTradeToQueueAsync(int code, string trainerName, T[] pks, RequestSignificance sig, SocketUser usr)
         {
-            if (!pk.CanBeTraded())
+            foreach (var pk in pks)
             {
-                await ReplyAsync("Provided Pokémon content is blocked from trading!").ConfigureAwait(false);
-                return;
+                if (!pk.CanBeTraded())
+                {
+                    await ReplyAsync("Provided Pokémon content is blocked from trading!").ConfigureAwait(false);
+                    return;
+                }
+
+                var la = new LegalityAnalysis(pk);
+                if (!la.Valid)
+                {
+                    await ReplyAsync($"{typeof(T).Name} attachment is not legal, and cannot be traded!").ConfigureAwait(false);
+                    return;
+                }
             }
 
-            var la = new LegalityAnalysis(pk);
-            if (!la.Valid)
-            {
-                await ReplyAsync($"{typeof(T).Name} attachment is not legal, and cannot be traded!").ConfigureAwait(false);
-                return;
-            }
-
-            await QueueHelper<T>.AddToQueueAsync(Context, code, trainerName, sig, pk, PokeRoutineType.BDSPLinkTrade, PokeTradeType.Specific, usr).ConfigureAwait(false);
+            await QueueHelper<T>.AddToQueueAsync(Context, code, trainerName, sig, pks, PokeRoutineType.BDSPLinkTrade, PokeTradeType.Specific, usr).ConfigureAwait(false);
         }
     }
 }

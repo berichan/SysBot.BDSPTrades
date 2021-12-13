@@ -300,7 +300,7 @@ namespace SysBot.Pokemon
                 else
                     UserListSpecialReqCount.Add(trainerHash, 1);
 
-                int limit = 6; // n-1
+                int limit = 6_000; // n-1
 
                 if (UserListSpecialReqCount[trainerHash] >= limit)
                 {
@@ -391,7 +391,7 @@ namespace SysBot.Pokemon
             var la = new LegalityAnalysis(pkm);
             if (!la.Valid)
             {
-                detail.SendNotification(caller, "SSRThis request isn't legal! Attemping to legalize...");
+                detail.SendNotification(caller, "SSRThis request isn't legal!");
                 caller.Log(la.Report());
                 try
                 {

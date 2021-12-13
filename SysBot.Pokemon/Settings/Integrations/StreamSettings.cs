@@ -280,7 +280,7 @@ namespace SysBot.Pokemon
         private void GenerateBotConnection<T>(PokeRoutineExecutorBase b, PokeTradeDetail<T> detail) where T : PKM, new()
         {
             var file = b.Connection.Name;
-            var name = string.Format(TrainerTradeStart, detail.ID, detail.Trainer.TrainerName, (Species)detail.TradeData.Species);
+            var name = string.Format(TrainerTradeStart, detail.ID, detail.Trainer.TrainerName, detail.TradeData.CollateSpecies());
             File.WriteAllText($"{file}.txt", name);
         }
 
@@ -290,7 +290,7 @@ namespace SysBot.Pokemon
             if (func == null)
                 return;
             var file = b.Connection.Name;
-            var pk = detail.TradeData;
+            var pk = detail.FirstData;
             func.Invoke(pk, $"sprite_{file}.png");
         }
 

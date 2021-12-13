@@ -116,9 +116,7 @@ namespace SysBot.Pokemon
             int waitCounter = 0;
             while (!token.IsCancellationRequested && Config.NextRoutineType == type)
             {
-                (var valid, var offset) = await ValidatePointerAll(Offsets.LinkTradePartnerPokemonPointer, token).ConfigureAwait(false);
-                if (valid)
-                    await SwitchConnection.WriteBytesAbsoluteAsync(new byte[344], offset, token).ConfigureAwait(false);
+                await AttemptClearTradePartnerPointer(token).ConfigureAwait(false);
                 var (detail, priority) = GetTradeData(type);
                 if (detail is null)
                 {
@@ -206,37 +204,54 @@ namespace SysBot.Pokemon
             }
         }
 
+        private void SetText(SAV8BS sav, string text)
+        {
+            System.IO.File.WriteAllText($"code{sav.OT}-{sav.DisplayTID}.txt", text);
+        }
+
         private async Task<PokeTradeResult> PerformLinkCodeTrade(SAV8BS sav, PokeTradeDetail<PB8> poke, CancellationToken token)
         {
+            //var pkm = AutoALMPokeGen<PB8>.Generate(214, "hj", (int)GameVersion.BD, (int)LanguageID.ChineseS, 2166, 344121, 1, "dave");
+            //if (pkm != null)
+            //    Log(pkm.Species.ToString());
             // Update Barrier Settings
             UpdateBarrier(poke.IsSynchronized);
             poke.TradeInitialize(this);
             await RestartGameIfCantLeaveUnionRoom(token).ConfigureAwait(false);
             Hub.Config.Stream.EndEnterCode(this);
 
-            var toSend = poke.TradeData;
-            if (toSend.Species != 0)
-                await SetBoxPokemon(toSend, token, sav).ConfigureAwait(false);
+            if (await CheckIfSoftBanned(token).ConfigureAwait(false))
+                await Unban(token).ConfigureAwait(false);
+
+            if (poke.FirstData.Species != 0)
+                await SetBoxPokemon(poke.FirstData, token, sav).ConfigureAwait(false);
+
+            if (poke.Type == PokeTradeType.Random)
+                SetText(sav, $"Trade code: {poke.Code:0000 0000}\r\nSending: {(Species)poke.FirstData.Species}");
+            else
+                SetText(sav, "Running a\nSpecific trade.");
 
             // Go into the union room and start telling everyone we're looking for a trade partner
             if (poke.Type != PokeTradeType.Random)
                 Hub.Config.Stream.StartEnterCode(this);
             if (!await EnterUnionRoomWithCode(poke, poke.Code, token).ConfigureAwait(false))
+            {
+                await ReOpenGame(Hub.Config, token).ConfigureAwait(false);
                 return PokeTradeResult.RecoverOpenBox;
+            }
 
             Hub.Config.Stream.EndEnterCode(this);
-
             poke.TradeSearching(this);
 
             // Keep pressing A until we're in boxes (in a trade) or until the timer runs out
             int inBoxChecks = Hub.Config.Trade.TradeWaitTime * 2;
             float currentRotation = 0;
-            while (!await IsInBox(token).ConfigureAwait(false) && inBoxChecks > 0)
+            while (!await IsTrue(Offsets.UnionWorkIsTalkingPointer, token).ConfigureAwait(false) && inBoxChecks > 0)
             {
                 for (int i = 0; i < 2; ++i)
                 {
                     await Click(A, 0_200, token).ConfigureAwait(false);
-                    currentRotation += 45f; // 1/40 of 360
+                    currentRotation += 45f;
                     if (currentRotation > 360f)
                         currentRotation -= 360f;
                     await SetRotationEuler(new Vector3(0, currentRotation, 0), token).ConfigureAwait(false);
@@ -248,99 +263,161 @@ namespace SysBot.Pokemon
                     return PokeTradeResult.TrainerTooSlow;
             }
 
-            await Task.Delay(1_500, token).ConfigureAwait(false);
+            // Keep pressing A until TargetTranerParam is loaded (when we hit the box).
+            while (!await IsPartnerParamLoaded(token).ConfigureAwait(false) && inBoxChecks > 0)
+            {
+                for (int i = 0; i < 2; ++i)
+                    await Click(A, 0_450, token).ConfigureAwait(false);
 
-            if (inBoxChecks < 1 && !await IsInBox(token).ConfigureAwait(false))
-                return PokeTradeResult.TrainerTooSlow;
+                // Can be false if they talked and quit.
+                if (!await IsTrue(Offsets.UnionWorkIsTalkingPointer, token).ConfigureAwait(false))
+                    break;
+                if (--inBoxChecks <= 0)
+                    return PokeTradeResult.TrainerTooSlow;
+            }
 
-            // Select pokemon
+            // Still going through dialog and box opening.
             await Task.Delay(2_000, token).ConfigureAwait(false);
+
+            // Can happen if they quit out of talking to us.
+            if (!await IsPartnerParamLoaded(token).ConfigureAwait(false))
+                return PokeTradeResult.TrainerTooSlow;
 
             var tradePartner = await GetTradePartnerInfo(token).ConfigureAwait(false);
             var tradePartnerNID = await GetTradePartnerNID(token).ConfigureAwait(false);
 
-            bool IsSafe = poke.Trainer.ID == 0 ? true : NewAntiAbuse.Instance.LogUser(tradePartner.IDHash, tradePartnerNID, poke.Trainer.ID.ToString(), poke.Trainer.TrainerName, Hub.Config.Trade.MultiAbuseEchoMention);
+            bool IsSafe = poke.Trainer.ID == 0 || tradePartner.IDHash == 0 ? true : NewAntiAbuse.Instance.LogUser(tradePartner.IDHash, tradePartnerNID, poke.Trainer.ID.ToString(), poke.Trainer.TrainerName, Hub.Config.Trade.MultiAbuseEchoMention);
             if (!IsSafe)
             {
                 Log($"Found known abuser: {tradePartner.TrainerName}-{tradePartner.SID}-{tradePartner.TID} ({poke.Trainer.TrainerName}) (NID: {tradePartnerNID})");
                 poke.SendNotification(this, $"Your savedata is associated with a known abuser. Consider not being an abuser, and you will no longer see this message.");
-                await Task.Delay(2_000, token).ConfigureAwait(false);
+                await Task.Delay(1_000, token).ConfigureAwait(false);
                 return PokeTradeResult.TrainerTooSlow;
             }
 
             Log($"Found trading partner: {tradePartner.TrainerName}-{tradePartner.SID}-{tradePartner.TID} ({poke.Trainer.TrainerName}) (NID: {tradePartnerNID})");
-
-            if (!await IsInBox(token).ConfigureAwait(false))
-                return PokeTradeResult.RecoverOpenBox;
-
-            // Confirm Box 1 Slot 1
-            if (poke.Type == PokeTradeType.Specific)
-            {
-                for (int i = 0; i < 5; i++)
-                    await Click(A, 0_500, token).ConfigureAwait(false);
-            }
-
             poke.SendNotification(this, $"Found Trading Partner: {tradePartner.TrainerName} SID: {tradePartner.SID:0000} TID: {tradePartner.TID:000000}. Waiting for a Pokémon...");
 
             if (poke.Type == PokeTradeType.Dump)
                 return await ProcessDumpTradeAsync(poke, token).ConfigureAwait(false);
 
-            var offered = await ReadUntilPresentPointer(Offsets.LinkTradePartnerPokemonPointer, 25_000, 1_000, BoxFormatSlotSize, token).ConfigureAwait(false);
-
-            var offset = await PointerAll(Offsets.LinkTradePartnerPokemonPointer, token).ConfigureAwait(false);
-            var oldEC = await SwitchConnection.ReadBytesAbsoluteAsync(offset, 4, token).ConfigureAwait(false);
-            if (offered is null)
+            int tradeCount = 0;
+            foreach (var send in poke.TradeData)
             {
-                return PokeTradeResult.TrainerTooSlow;
-            }
-
-            SpecialTradeType itemReq = SpecialTradeType.None;
-            if (poke.Type == PokeTradeType.Seed)
-                itemReq = CheckItemRequest(ref offered, this, poke, tradePartner, sav);
-            if (itemReq == SpecialTradeType.FailReturn)
-            {
-                return PokeTradeResult.IllegalTrade;
-            }
-
-            if (poke.Type == PokeTradeType.Seed && itemReq == SpecialTradeType.None)
-            {
-                // Immediately exit, we aren't trading anything.
-                return await EndQuickTradeAsync(poke, offered, token).ConfigureAwait(false);
-            }
-
-            PokeTradeResult update;
-            var trainer = new PartnerDataHolder(tradePartnerNID, tradePartner.TrainerName, tradePartner.TID.ToString());
-            (toSend, update) = await GetEntityToSend(sav, poke, offered, oldEC, toSend, trainer, poke.Type == PokeTradeType.Seed ? itemReq : null, token).ConfigureAwait(false);
-            if (update != PokeTradeResult.Success)
-            {
-                if (itemReq != SpecialTradeType.None)
+                // Looping check
+                int checks = 120;
+                while (poke.TradeData.Length > 1 && BitConverter.ToUInt64(await SwitchConnection.PointerPeek(8, Offsets.LinkTradePartnerPokemonPointer, token).ConfigureAwait(false), 0) == 0)
                 {
-                    poke.SendNotification(this, "SSRYour request isn't legal. Please try a different Pokémon or request.");
-                    if (!string.IsNullOrWhiteSpace(Hub.Config.Web.URIEndpoint))
-                        AddToPlayerLimit(tradePartner.IDHash.ToString(), -1);
+                    await Click(B, 0_550, token).ConfigureAwait(false);
+                    if (checks-- < 1)
+                        return PokeTradeResult.TrainerTooSlow;
                 }
 
-                return update;
+                var toSend = send;
+                if (toSend.Species != 0)
+                    await SetBoxPokemon(toSend, token, sav).ConfigureAwait(false);
+
+                // Confirm Box 1 Slot 1
+                if (poke.Type == PokeTradeType.Specific)
+                {
+                    for (int i = 0; i < 5; i++)
+                        await Click(A, 0_500, token).ConfigureAwait(false);
+                }
+                else if (poke.Type is PokeTradeType.Clone or PokeTradeType.Seed or PokeTradeType.Random)
+                {
+                    for (int i = 0; i < 2; ++i)
+                        await Click(B, 0_200, token).ConfigureAwait(false);
+                }
+
+                var offered = await ReadUntilPresentPointer(Offsets.LinkTradePartnerPokemonPointer, 25_000, 1_000, BoxFormatSlotSize, token).ConfigureAwait(false);
+                Log("Pointer is present with a pokemon.");
+
+                var offset = await SwitchConnection.PointerAll(Offsets.LinkTradePartnerPokemonPointer, token).ConfigureAwait(false);
+                var oldEC = await SwitchConnection.ReadBytesAbsoluteAsync(offset, 4, token).ConfigureAwait(false);
+                if (offered is null)
+                    return PokeTradeResult.TrainerTooSlow;
+
+                if (poke.Type == PokeTradeType.Random)
+                {
+                    Log($"Offered nickname is {offered.Nickname}");
+                    if (offered.IsNicknamed)
+                    {
+                        if (offered.Nickname.Length == 6 && uint.TryParse(offered.Nickname[..3], out _))
+                        {
+                            var generatedMon = AutoALMPokeGen<PB8>.Generate(int.Parse(offered.Nickname[..3]), offered.Nickname[3..5], offered.Version, offered.Language, offered.TrainerSID7, offered.TrainerID7, offered.OT_Gender, offered.OT_Name);
+                            if (generatedMon != null)
+                            {
+                                await SetBoxPokemon(generatedMon, token, sav).ConfigureAwait(false);
+                                SetText(sav, $"Trade code: {poke.Code:0000 0000}\r\n!request for {tradePartner.TrainerName}");
+                                Hub.Queues.Enqueue(PokeRoutineType.BDSPLinkTrade, poke, 3);
+                            }
+                        }
+                    }
+                }
+
+                SpecialTradeType itemReq = SpecialTradeType.None;
+                if (poke.Type == PokeTradeType.Seed)
+                    itemReq = CheckItemRequest(ref offered, this, poke, tradePartner, sav);
+                if (itemReq == SpecialTradeType.FailReturn)
+                    return PokeTradeResult.IllegalTrade;
+
+                if (poke.Type == PokeTradeType.Seed && itemReq == SpecialTradeType.None)
+                {
+                    // Immediately exit, we aren't trading anything.
+                    poke.SendNotification(this, "SSRNo held item or valid request, the BDSP bots are special request only!");
+                    return await EndQuickTradeAsync(poke, offered, token).ConfigureAwait(false);
+                }
+
+                PokeTradeResult update;
+                var trainer = new PartnerDataHolder(tradePartnerNID, tradePartner.TrainerName, tradePartner.TID.ToString());
+                (toSend, update) = await GetEntityToSend(sav, poke, offered, oldEC, toSend, trainer, poke.Type == PokeTradeType.Seed ? itemReq : null, token).ConfigureAwait(false);
+                if (update != PokeTradeResult.Success)
+                {
+                    if (itemReq != SpecialTradeType.None)
+                    {
+                        poke.SendNotification(this, "SSRYour request isn't legal. Please try a different Pokémon or request.");
+                        if (!string.IsNullOrWhiteSpace(Hub.Config.Web.URIEndpoint))
+                            AddToPlayerLimit(tradePartner.IDHash.ToString(), -1);
+                    }
+
+                    return update;
+                }
+
+                if (itemReq == SpecialTradeType.WonderCard)
+                    poke.SendNotification(this, "SSRDistribution success!");
+                else if (itemReq != SpecialTradeType.None && itemReq != SpecialTradeType.Shinify)
+                    poke.SendNotification(this, "SSRSpecial request successful!");
+                else if (itemReq == SpecialTradeType.Shinify)
+                    poke.SendNotification(this, "SSRShinify success! Thanks for being part of the community!");
+                if (tradeCount++ > 3)
+                    break;
+
+                var tradeResult = await ConfirmAndStartTrading(poke, token).ConfigureAwait(false);
+                if (tradeResult != PokeTradeResult.Success)
+                    return tradeResult;
+                else
+                    await AttemptClearTradePartnerPointer(token).ConfigureAwait(false);
+
+                if (token.IsCancellationRequested)
+                    return PokeTradeResult.RoutineCancel;
+
+                // Trade was Successful!
+                var receivedNext = await ReadBoxPokemon(1, 1, token).ConfigureAwait(false);
+                // Pokémon in b1s1 is same as the one they were supposed to receive (was never sent).
+                if (SearchUtil.HashByDetails(receivedNext) == SearchUtil.HashByDetails(send))
+                {
+                    Log("User did not complete the trade.");
+                    return PokeTradeResult.TrainerTooSlow;
+                }
+
+                poke.SendNotification(this, receivedNext, $"You sent me {(Species)receivedNext.Species} for {(Species)send.Species}!");
             }
 
-            if (itemReq == SpecialTradeType.WonderCard)
-                poke.SendNotification(this, "SSRDistribution success!");
-            else if (itemReq != SpecialTradeType.None && itemReq != SpecialTradeType.Shinify)
-                poke.SendNotification(this, "SSRSpecial request successful!");
-            else if (itemReq == SpecialTradeType.Shinify)
-                poke.SendNotification(this, "SSRShinify success! Thanks for being part of the community!");
-
-            var tradeResult = await ConfirmAndStartTrading(poke, token).ConfigureAwait(false);
-            if (tradeResult != PokeTradeResult.Success)
-                return tradeResult;
-
-            if (token.IsCancellationRequested)
-                return PokeTradeResult.RoutineCancel;
 
             // Trade was Successful!
             var received = await ReadBoxPokemon(1, 1, token).ConfigureAwait(false);
             // Pokémon in b1s1 is same as the one they were supposed to receive (was never sent).
-            if (SearchUtil.HashByDetails(received) == SearchUtil.HashByDetails(toSend))
+            if (SearchUtil.HashByDetails(received) == SearchUtil.HashByDetails(poke.FirstData))
             {
                 Log("User did not complete the trade.");
                 return PokeTradeResult.TrainerTooSlow;
@@ -355,41 +432,46 @@ namespace SysBot.Pokemon
 
         private async Task<PokeTradeResult> ConfirmAndStartTrading(PokeTradeDetail<PB8> detail, CancellationToken token)
         {
+            var oldPKData = await SwitchConnection.PointerPeek(344, Offsets.BoxStartPokemonPointer, token).ConfigureAwait(false);
+
             await Click(A, 3_000, token).ConfigureAwait(false);
-            for (int i = 0; i < 7; i++)
+            for (int i = 0; i < 10; i++)
             {
                 if (await IsUserBeingShifty(detail, token).ConfigureAwait(false))
                     return PokeTradeResult.SuspiciousActivity;
                 await Click(A, 1_500, token).ConfigureAwait(false);
             }
 
-            var delay_count = 0;
-            while (!await IsInBox(token).ConfigureAwait(false))
+            await Click(A, 3_000, token).ConfigureAwait(false);
+            var tradeCounter = 0;
+            while (await IsTrue(Offsets.UnionWorkIsTalkingPointer, token).ConfigureAwait(false))
             {
                 await Click(A, 1_000, token).ConfigureAwait(false);
-                delay_count++;
-                if (await GetUnitySceneStream(token).ConfigureAwait(false) != UnitySceneStream.LocalUnionRoom)
-                    return PokeTradeResult.RecoverReturnOverworld;
-                if (delay_count >= Hub.Config.Trade.TradeAnimationMaxDelaySeconds)
+                tradeCounter++;
+
+                if (await SwitchConnection.PointerPeek(344, Offsets.BoxStartPokemonPointer, token).ConfigureAwait(false) != oldPKData)
+                {
+                    await Task.Delay(14_000, token).ConfigureAwait(false);
+                    return PokeTradeResult.Success;
+                }
+
+                // We've somehow failed out of the Union Room -- can happen with connection error.
+                if (!await IsTrue(Offsets.UnionWorkIsGamingPointer, token).ConfigureAwait(false))
+                    return PokeTradeResult.TrainerTooSlow;
+                if (tradeCounter >= Hub.Config.Trade.TradeAnimationMaxDelaySeconds)
                     break;
             }
 
-            await Task.Delay(1_000 + Util.Rand.Next(0_700, 1_000), token).ConfigureAwait(false);
-
-            int checkCount = 20;
-            while (await GetSubMenuState(token).ConfigureAwait(false) == SubMenuState.NonBox && !await CanPlayerMove(token).ConfigureAwait(false) && checkCount > 0)
-            {
-                await Task.Delay(1_000, token).ConfigureAwait(false);
-                checkCount--;
-            }
-
-            Log("Exited trade!");
-            return PokeTradeResult.Success;
+            // If we don't detect a B1S1 change, the trade didn't go through in that time.
+            return PokeTradeResult.TrainerTooSlow;
         }
 
         private async Task<bool> EnterUnionRoomWithCode(PokeTradeDetail<PB8> poke, int tradeCode, CancellationToken token)
         {
             var currentScene = await GetUnitySceneStream(token).ConfigureAwait(false);
+            if (currentScene == UnitySceneStream.Unknown)
+                return false;
+
             Log($"Currently in scene: {currentScene}. Begin counter talk sequence.");
 
             if (currentScene is UnitySceneStream.PokeCentreDownstairsGlobal or UnitySceneStream.PokeCentreUpstairsLocal)
@@ -406,7 +488,10 @@ namespace SysBot.Pokemon
             }
 
             int doubleACount = currentScene == UnitySceneStream.PokeCentreUpstairsLocal ? 3 : 2; // local requires one extra press
+            if (GameLang is LanguageID.French)
+                doubleACount--;
 
+            Log($"Begin dialogue with clerk...");
             for (int i = 0; i < doubleACount; i++)
             {
                 await Click(A, 0_300, token).ConfigureAwait(false);
@@ -416,50 +501,44 @@ namespace SysBot.Pokemon
             await Click(A, 0_900, token).ConfigureAwait(false); // Would you like to enter? Screen
 
             // Link code selection index
-            await Click(DDOWN, 0_400, token).ConfigureAwait(false);
-            await Click(DDOWN, 0_400, token).ConfigureAwait(false);
+            await Click(DDOWN, 0_350, token).ConfigureAwait(false);
+            await Click(DDOWN, 0_300, token).ConfigureAwait(false);
 
-            // Link code
-            for (int i = 0; i < 2; i++)
+            int numTries = 40;
+            Log($"Awaiting keyboard open...");
+            while (!await IsKeyboardOpen(token).ConfigureAwait(false))
             {
-                await Click(A, 0_300, token).ConfigureAwait(false);
-                await Click(A, 0_700, token).ConfigureAwait(false);
+                await Click(ZR, 0_500, token).ConfigureAwait(false); // ZR=A but not for keyboard
+
+                if (numTries-- < 0)
+                    return false;
             }
 
-            // Save
-            await Click(A, 0_300, token).ConfigureAwait(false);
-            await Click(A, 0_300, token).ConfigureAwait(false);
-            if (currentScene == UnitySceneStream.PokeCentreDownstairsGlobal)
-            {
-                await Click(A, 0_300, token).ConfigureAwait(false);
-                await Click(A, 0_300, token).ConfigureAwait(false);
-                await Click(A, 0_700, token).ConfigureAwait(false);
-            }
-            await Click(A, 7_000, token).ConfigureAwait(false);
+            await Task.Delay(0_800, token).ConfigureAwait(false);
 
             Log($"Entering Link Trade code: {tradeCode:0000 0000}...");
             poke.SendNotification(this, $"Entering Link Trade Code: {tradeCode:0000 0000}...");
             await EnterLinkCode(tradeCode, Hub.Config, token).ConfigureAwait(false);
             // Wait for Barrier to trigger all bots simultaneously.
             WaitAtBarrierIfApplicable(token);
+
             await Click(PLUS, 0_600, token).ConfigureAwait(false);
+            await Click(PLUS, 0_100, token).ConfigureAwait(false); // in case eaten
 
-            int numChecks = 85;
-            while (await GetUnitySceneStream(token).ConfigureAwait(false) != UnitySceneStream.LocalUnionRoom)
+            int tries = 100;
+            while (!await IsTrue(Offsets.UnionWorkIsGamingPointer, token).ConfigureAwait(false))
             {
-                await Click(A, 0_100, token).ConfigureAwait(false);
-                numChecks--;
+                await Click(A, 0_300, token).ConfigureAwait(false);
 
-                if (numChecks < 1)
+                if (await GetUnitySceneStream(token).ConfigureAwait(false) == UnitySceneStream.LocalUnionRoom)
+                {
+                    await Task.Delay(1_000, token).ConfigureAwait(false);
+                    await SetPosition(GetUnionRoomCenter(currentScene), token).ConfigureAwait(false);
+                }
+
+                if (--tries < 1)
                     return false;
             }
-
-            await Task.Delay(1_000, token).ConfigureAwait(false); // wait for warp down anim
-
-            await SetPosition(GetUnionRoomCenter(currentScene), token).ConfigureAwait(false);
-
-            // Wait for connecting wheel
-            await Task.Delay(3_500, token).ConfigureAwait(false);
 
             Log("Mashing Y until we can no longer move");
             while (await CanPlayerMove(token).ConfigureAwait(false))
@@ -478,6 +557,19 @@ namespace SysBot.Pokemon
             return false;
         }
 
+        private async Task AttemptClearTradePartnerPointer(CancellationToken token)
+        {
+            (var valid, var offs) = await ValidatePointerAll(Offsets.LinkTradePartnerPokemonPointer, token).ConfigureAwait(false);
+            if (valid)
+            {
+                if (BitConverter.ToUInt32(await SwitchConnection.ReadBytesAbsoluteAsync(offs, 4, token).ConfigureAwait(false), 0) == 0)
+                    return;
+                if (BitConverter.ToUInt16(await SwitchConnection.ReadBytesAbsoluteAsync(offs + 4, 2, token).ConfigureAwait(false), 0) != 0)
+                    return;
+                await SwitchConnection.WriteBytesAbsoluteAsync(new byte[344], offs, token).ConfigureAwait(false);
+            }
+        }
+
         private async Task RestartGameIfCantLeaveUnionRoom(CancellationToken token)
         {
             if (!await EnsureOutsideOfUnionRoom(token).ConfigureAwait(false))
@@ -488,65 +580,100 @@ namespace SysBot.Pokemon
 
         private async Task<bool> EnsureOutsideOfUnionRoom(CancellationToken token)
         {
-            if (await IsInBox(token).ConfigureAwait(false))
+            if (await GetUnitySceneStream(token).ConfigureAwait(false) is UnitySceneStream.Unknown)
             {
-                Log("Exiting box...");
+                // Possibly title screen
+                await Click(A, 3_000, token).ConfigureAwait(false);
+                await Click(A, 3_000, token).ConfigureAwait(false);
                 int tries = 20;
-                while (await IsInBox(token).ConfigureAwait(false))
+                while (await GetUnitySceneStream(token).ConfigureAwait(false) is UnitySceneStream.Unknown)
                 {
-                    await Click(B, 0_100, token).ConfigureAwait(false);
-                    await Click(B, 0_400, token).ConfigureAwait(false);
-                    await Click(DUP, 0_100, token).ConfigureAwait(false);
-                    await Click(A, 0_500, token).ConfigureAwait(false);
-                    await Click(B, 0_400, token).ConfigureAwait(false);
-                    tries--;
-                    if (tries < 0)
-                        return false;
-                }
-
-                for (int i = 0; i < 3; ++i)
-                    await Click(B, 0_400, token).ConfigureAwait(false);
-            }
-
-            int triesMove = 4;
-            while (!await CanPlayerMove(token).ConfigureAwait(false) && triesMove > 0)
-            {
-                triesMove--;
-                for (int i = 0; i < 5; ++i)
+                    await Click(B, 0_300, token).ConfigureAwait(false);
                     await Click(B, 0_300, token).ConfigureAwait(false);
 
-                await Task.Delay(0_800, token).ConfigureAwait(false);
+                    if (tries-- < 0)
+                        return false;
+                }
+                if (!await IsPlayerInstantiated(token).ConfigureAwait(false))
+                    await Task.Delay(7_000, token).ConfigureAwait(false);
             }
 
-            if (triesMove < 1)
+            if (!await IsTrue(Offsets.UnionWorkIsGamingPointer, token).ConfigureAwait(false))
+                return true;
+
+            if (!await ExitBoxToUnionRoom(token).ConfigureAwait(false))
                 return false;
-
-            if (await GetUnitySceneStream(token) == UnitySceneStream.LocalUnionRoom)
+            if (!await ExitUnionRoomToOverworld(token).ConfigureAwait(false))
+                return false;
+            if (!await CanPlayerMove(token).ConfigureAwait(false))
             {
-                Log("Exiting union room...");
-                // Warp to somewhere safe
-                await SetPosition(GlobalUnionRoomCenter, token).ConfigureAwait(false);
-                for (int i = 0; i < 4; ++i)
-                    await Click(B, 0_400, token).ConfigureAwait(false);
+                int tries = 30;
+                while (!await CanPlayerMove(token).ConfigureAwait(false))
+                {
+                    await Click(B, 0_300, token).ConfigureAwait(false);
+                    await Click(B, 0_300, token).ConfigureAwait(false);
 
-                await Click(Y, 0_800, token).ConfigureAwait(false);
-                await Click(DDOWN, 0_400, token).ConfigureAwait(false);
-                await Click(A, 0_400, token).ConfigureAwait(false);
-
-                for (int i = 0; i < 5; ++i)
-                    await Click(A, 0_500, token).ConfigureAwait(false);
-
-                await Task.Delay(6_200, token).ConfigureAwait(false);
-                if (await GetUnitySceneStream(token) == UnitySceneStream.LocalUnionRoom)
-                    return false;
+                    if (tries-- < 0)
+                        return false;
+                }
             }
 
             return true;
         }
 
+        private async Task<bool> ExitBoxToUnionRoom(CancellationToken token)
+        {
+            if (await IsTrue(Offsets.UnionWorkIsTalkingPointer, token).ConfigureAwait(false))
+            {
+                Log("Exiting box...");
+                int tries = 32;
+                while (await IsTrue(Offsets.UnionWorkIsTalkingPointer, token).ConfigureAwait(false))
+                {
+                    await Click(B, 0_500, token).ConfigureAwait(false);
+                    await Click(DUP, 0_200, token).ConfigureAwait(false);
+                    await Click(A, 0_500, token).ConfigureAwait(false);
+                    // Keeps regular quitting a little faster, only need this for trade evolutions + moves.
+                    if (tries < 10)
+                        await Click(B, 0_500, token).ConfigureAwait(false);
+                    await Click(B, 0_500, token).ConfigureAwait(false);
+                    tries--;
+                    if (tries < 0)
+                        return false;
+                }
+            }
+            await Task.Delay(2_000, token).ConfigureAwait(false);
+            return true;
+        }
+
+        private async Task<bool> ExitUnionRoomToOverworld(CancellationToken token)
+        {
+            if (await IsTrue(Offsets.UnionWorkIsGamingPointer, token).ConfigureAwait(false))
+            {
+                Log("Exiting Union Room...");
+                for (int i = 0; i < 3; ++i)
+                    await Click(B, 0_200, token).ConfigureAwait(false);
+
+                await Click(Y, 1_000, token).ConfigureAwait(false);
+                await Click(DDOWN, 0_200, token).ConfigureAwait(false);
+                for (int i = 0; i < 3; ++i)
+                    await Click(A, 0_400, token).ConfigureAwait(false);
+
+                int tries = 10;
+                while (await IsTrue(Offsets.UnionWorkIsGamingPointer, token).ConfigureAwait(false))
+                {
+                    await Task.Delay(0_400, token).ConfigureAwait(false);
+                    tries--;
+                    if (tries < 0)
+                        return false;
+                }
+                await Task.Delay(4_000, token).ConfigureAwait(false);
+            }
+            return true;
+        }
+
         private async Task<bool> CanPlayerMove(CancellationToken token)
         {
-            var movementState = BitConverter.ToUInt16(await PointerPeek(0x2, Offsets.PlayerMovementPointer, token).ConfigureAwait(false), 0);
+            var movementState = BitConverter.ToUInt16(await SwitchConnection.PointerPeek(0x2, Offsets.PlayerMovementPointer, token).ConfigureAwait(false), 0);
             return movementState == 0x0101;
         }
 
@@ -586,11 +713,16 @@ namespace SysBot.Pokemon
 
             TradeSettings.AddCompletedDumps();
             detail.Notifier.SendNotification(this, detail, $"Dumped {ctr} Pokémon.");
-            detail.Notifier.TradeFinished(this, detail, detail.TradeData); // blank pk8
+            detail.Notifier.TradeFinished(this, detail, new PB8()); // blank pb8
             return PokeTradeResult.Success;
         }
 
-        private async Task<TradePartnerBS> GetTradePartnerInfo(CancellationToken token) => new TradePartnerBS(await PointerPeek(16, Offsets.LinkTradePartnerIDPointer, token).ConfigureAwait(false));
+        private async Task<TradePartnerBS> GetTradePartnerInfo(CancellationToken token)
+        {
+            var id = await SwitchConnection.PointerPeek(4, Offsets.LinkTradePartnerIDPointer, token).ConfigureAwait(false);
+            var name = await SwitchConnection.PointerPeek(TradePartnerBS.MaxByteLengthStringObject, Offsets.LinkTradePartnerNamePointer, token).ConfigureAwait(false);
+            return new TradePartnerBS(id, name);
+        }
 
         protected virtual async Task<(PB8 toSend, PokeTradeResult check)> GetEntityToSend(SAV8BS sav, PokeTradeDetail<PB8> poke, PB8 offered, byte[] oldEC, PB8 toSend, PartnerDataHolder partnerID, SpecialTradeType? stt, CancellationToken token)
         {
@@ -681,7 +813,7 @@ namespace SysBot.Pokemon
                 }
 
                 toSend = trade.Receive;
-                poke.TradeData = toSend;
+                poke.FirstData = toSend;
 
                 poke.SendNotification(this, "Injecting the requested Pokémon.");
                 await Click(A, 0_800, token).ConfigureAwait(false);

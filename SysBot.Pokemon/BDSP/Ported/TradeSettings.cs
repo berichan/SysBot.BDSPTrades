@@ -3,6 +3,7 @@ using PKHeX.Core;
 using System.ComponentModel;
 using System.Threading;
 using SysBot.Base;
+using System;
 
 namespace SysBot.Pokemon
 {
@@ -12,6 +13,9 @@ namespace SysBot.Pokemon
         private const string TradeConfig = nameof(TradeConfig);
         private const string Dumping = nameof(Dumping);
         private const string Counts = nameof(Counts);
+
+        private int maxAttachments = 1;
+
         public override string ToString() => "Trade Bot Settings";
 
         [Category(TradeConfig), Description("Time to wait for a trade partner in seconds.")]
@@ -37,6 +41,9 @@ namespace SysBot.Pokemon
 
         [Category(TradeConfig), Description("If not empty, the provided string will be appended to Echo alerts to notify whomever you specify when a user is found using multiple accounts. For Discord, use <@userIDnumber> to mention.")]
         public string MultiAbuseEchoMention { get; set; } = string.Empty;
+
+        [Category(TradeConfig), Description("Maximum amount of trades allowed using PB8 files, between 1 and 3.")]
+        public int MaximumAttachmentsAllowed { get => maxAttachments; set => maxAttachments = Math.Min(value, 3); }
 
         /// <summary>
         /// Gets a random trade code based on the range settings.

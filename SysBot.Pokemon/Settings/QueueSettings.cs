@@ -75,7 +75,7 @@ namespace SysBot.Pokemon
         public int YieldMultWaitDump { get; set; } = 1;
 
         [Category(TimeBias), Description("Multiplies the amount of users in queue to give an estimate of how much time it will take until the user is processed.")]
-        public float EstimatedDelayFactor { get; set; } = 1.1f;
+        public float EstimatedDelayFactor { get; set; } = 1.9f;
 
         private int GetCountBias(PokeTradeType type) => type switch
         {

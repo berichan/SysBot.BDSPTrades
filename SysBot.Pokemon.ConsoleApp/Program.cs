@@ -5,7 +5,6 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 using PKHeX.Core;
 using SysBot.Base;
-using SysBot.Pokemon.Z3;
 
 namespace SysBot.Pokemon.ConsoleApp
 {

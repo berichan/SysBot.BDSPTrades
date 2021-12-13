@@ -80,7 +80,7 @@ namespace SysBot.Pokemon
                     continue;
                 }
 
-                var la = new LegalityAnalysis(dest);
+                /*var la = new LegalityAnalysis(dest);
                 if (!la.Valid)
                 {
                     var reason = la.Report();
@@ -92,7 +92,7 @@ namespace SysBot.Pokemon
                 {
                     LogUtil.LogInfo("Provided file was loaded but can't be Surprise Traded: " + dest.FileName, nameof(PokemonPool<T>));
                     surpriseBlocked++;
-                }
+                }*/
                 
                 if (Settings.Legality.ResetHOMETracker && pkm is IHomeTrack h)
                     h.Tracker = 0;

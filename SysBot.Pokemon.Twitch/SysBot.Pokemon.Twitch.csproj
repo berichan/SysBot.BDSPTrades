@@ -8,13 +8,21 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="PKHeX.Core" Version="21.11.21" />
+    <PackageReference Include="PKHeX.Core" Version="21.11.27" />
     <PackageReference Include="TwitchLib.Client" Version="3.2.3" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SysBot.Base\SysBot.Base.csproj" />
     <ProjectReference Include="..\SysBot.Pokemon\SysBot.Pokemon.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="deps\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="SysBot.Base.dll">
+      <HintPath>deps\SysBot.Base.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>

@@ -4,6 +4,7 @@ using Discord.WebSocket;
 using Discord.Net;
 using PKHeX.Core;
 using System.Threading.Tasks;
+using System.Linq;
 
 namespace SysBot.Pokemon.Discord
 {
@@ -11,7 +12,7 @@ namespace SysBot.Pokemon.Discord
     {
         private const uint MaxTradeCode = 9999_9999;
 
-        public static async Task AddToQueueAsync(SocketCommandContext context, int code, string trainer, RequestSignificance sig, T trade, PokeRoutineType routine, PokeTradeType type, SocketUser trader)
+        public static async Task AddToQueueAsync(SocketCommandContext context, int code, string trainer, RequestSignificance sig, T[] trade, PokeRoutineType routine, PokeTradeType type, SocketUser trader)
         {
             if ((uint)code > MaxTradeCode)
             {
@@ -55,19 +56,23 @@ namespace SysBot.Pokemon.Discord
             }
         }
 
+        public static async Task AddToQueueAsync(SocketCommandContext context, int code, string trainer, RequestSignificance sig, T trade, PokeRoutineType routine, PokeTradeType type, SocketUser trader)
+            => await AddToQueueAsync(context, code, trainer, sig, new T[] { trade }, routine, type, trader).ConfigureAwait(false);
+
         public static async Task AddToQueueAsync(SocketCommandContext context, int code, string trainer, RequestSignificance sig, T trade, PokeRoutineType routine, PokeTradeType type)
         {
             await AddToQueueAsync(context, code, trainer, sig, trade, routine, type, context.User).ConfigureAwait(false);
         }
 
-        private static bool AddToTradeQueue(SocketCommandContext context, T pk, int code, string trainerName, RequestSignificance sig, PokeRoutineType type, PokeTradeType t, SocketUser trader, out string msg)
+        private static bool AddToTradeQueue(SocketCommandContext context, T[] pk, int code, string trainerName, RequestSignificance sig, PokeRoutineType type, PokeTradeType t, SocketUser trader, out string msg)
         {
             var user = trader;
             var userID = user.Id;
             var name = user.Username;
+            var firstPk = pk.FirstOrDefault();
 
             var trainer = new PokeTradeTrainerInfo(trainerName, userID);
-            var notifier = new DiscordTradeNotifier<T>(pk, trainer, code, user, context.Channel);
+            var notifier = new DiscordTradeNotifier<T>(firstPk, trainer, code, user, context.Channel);
             var detail = new PokeTradeDetail<T>(pk, trainer, notifier, t, code, sig == RequestSignificance.Favored);
             var trade = new TradeEntry<T>(detail, userID, type, name);
 
@@ -88,8 +93,8 @@ namespace SysBot.Pokemon.Discord
                 ticketID = $", unique ID: {detail.ID}";
 
             var pokeName = "";
-            if (t == PokeTradeType.Specific && pk.Species != 0)
-                pokeName = $" Receiving: {(Species)pk.Species}.";
+            if (t == PokeTradeType.Specific && firstPk.Species != 0)
+                pokeName = $" Receiving: {pk.CollateSpecies()}.";
             msg = $"{user.Mention} - Added to the {type} queue{ticketID}. Current Position: {position.Position}.{pokeName}";
 
             var botct = Info.Hub.Bots.Count;

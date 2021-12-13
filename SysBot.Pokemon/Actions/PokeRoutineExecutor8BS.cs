@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -12,50 +13,14 @@ namespace SysBot.Pokemon
 {
     public abstract class PokeRoutineExecutor8BS : PokeRoutineExecutor<PB8>
     {
+        protected const int HidWaitTime = 50;
         protected IPokeDataOffsetsBS Offsets { get; private set; } = new PokeDataOffsetsBS_BD();
         protected PokeRoutineExecutor8BS(PokeBotState cfg) : base(cfg) 
         {
             
         }
 
-        protected async Task<ulong> PointerAll(long[] jumps, CancellationToken token)
-        {
-            byte[] command = Encoding.UTF8.GetBytes($"pointerAll{string.Concat(jumps.Select(z => $" {z}"))}\r\n");
-            byte[] socketReturn = await SwitchConnection.ReadRaw(command, sizeof(ulong) * 2 + 1, token).ConfigureAwait(false);
-            var bytes = Base.Decoder.ConvertHexByteStringToBytes(socketReturn);
-            bytes = bytes.Reverse().ToArray();
-
-            var offset = BitConverter.ToUInt64(bytes, 0);
-            return offset;
-        }
-
-        protected async Task<byte[]> PointerPeek(int size, long[] jumps, CancellationToken token)
-        {
-            byte[] command = Encoding.UTF8.GetBytes($"pointerPeek {size}{string.Concat(jumps.Select(z => $" {z}"))}\r\n");
-            byte[] socketReturn = await SwitchConnection.ReadRaw(command, (size * 2) + 1, token).ConfigureAwait(false);
-            var bytes = Base.Decoder.ConvertHexByteStringToBytes(socketReturn);
-            return bytes;
-        }
-
-        protected async Task<(bool, ulong)> ValidatePointerAll(long[] jumps, CancellationToken token)
-        {
-            var solved = await PointerAll(jumps, token).ConfigureAwait(false);
-            return (solved != 0, solved);
-        }
-
-        // SysBot.NET likes heap offsets
-        protected async Task<ulong> PointerRelative(long[] jumps, CancellationToken token)
-        {
-            byte[] command = Encoding.UTF8.GetBytes($"pointerRelative{string.Concat(jumps.Select(z => $" {z}"))}\r\n");
-            byte[] socketReturn = await SwitchConnection.ReadRaw(command, sizeof(ulong) * 2 + 1, token).ConfigureAwait(false);
-            var bytes = Base.Decoder.ConvertHexByteStringToBytes(socketReturn);
-            bytes = bytes.Reverse().ToArray();
-
-            var offset = BitConverter.ToUInt64(bytes, 0);
-            return offset;
-        }
-
-        protected async Task PointerPoke(byte[] bytes, long[] jumps, CancellationToken token)
+        protected async Task PointerPoke(byte[] bytes, IEnumerable<long> jumps, CancellationToken token)
         {
             byte[] command = Encoding.UTF8.GetBytes($"pointerPoke 0x{string.Concat(bytes.Select(z => $"{z:X2}"))}{string.Concat(jumps.Select(z => $" {z}"))}\r\n");
             await SwitchConnection.SendRaw(command, token).ConfigureAwait(false);
@@ -69,9 +34,9 @@ namespace SysBot.Pokemon
             return new PB8(data);
         }
 
-        public override async Task<PB8> ReadPokemonPointer(long[] jumps, int size, CancellationToken token)
+        public override async Task<PB8> ReadPokemonPointer(IEnumerable<long> jumps, int size, CancellationToken token)
         {
-            (var valid, var offset) = await ValidatePointerAll(jumps, token).ConfigureAwait(false);
+            var (valid, offset) = await ValidatePointerAll(jumps, token).ConfigureAwait(false);
             if (!valid)
                 return new PB8();
             return await ReadPokemon(offset, token).ConfigureAwait(false);
@@ -85,10 +50,7 @@ namespace SysBot.Pokemon
 
         public override async Task<PB8> ReadBoxPokemon(int box, int slot, CancellationToken token)
         {
-            if (box != 1 || slot > 5)
-                throw new Exception("I can only see b1s1 to b1s5 for now");
-            var jumps = (long[])Offsets.BoxStartPokemonPointer.Clone();
-            jumps[jumps.Length - 1] -= (slot - 1) * BoxFormatSlotSize;
+            var jumps = Offsets.BoxStartPokemonPointer.ToArray();
             return await ReadPokemonPointer(jumps, BoxFormatSlotSize, token).ConfigureAwait(false);
         }
 
@@ -117,7 +79,7 @@ namespace SysBot.Pokemon
             else throw new Exception($"Title for {title} is unknown.");
 
             // generate a fake savefile
-            var myStatusOffset = await PointerAll(Offsets.MainSavePointer, token).ConfigureAwait(false);
+            var myStatusOffset = await SwitchConnection.PointerAll(Offsets.MainSavePointer, token).ConfigureAwait(false);
 
             // we only need config and mystatus regions
             const ulong offs = 0x79B74;
@@ -142,8 +104,8 @@ namespace SysBot.Pokemon
             }
 
             Log($"Setting BDSP-specific hid waits");
-            await Connection.SendAsync(SwitchCommand.Configure(SwitchConfigureParameter.keySleepTime, 50), token).ConfigureAwait(false);
-            await Connection.SendAsync(SwitchCommand.Configure(SwitchConfigureParameter.pollRate, 50), token).ConfigureAwait(false);
+            await Connection.SendAsync(SwitchCommand.Configure(SwitchConfigureParameter.keySleepTime, HidWaitTime), token).ConfigureAwait(false);
+            await Connection.SendAsync(SwitchCommand.Configure(SwitchConfigureParameter.pollRate, HidWaitTime), token).ConfigureAwait(false);
         }
 
         public async Task CleanExit(IBotStateSettings settings, CancellationToken token)
@@ -159,7 +121,6 @@ namespace SysBot.Pokemon
 
         protected virtual async Task EnterLinkCode(int code, PokeTradeHubConfig config, CancellationToken token)
         {
-            // Default implementation to just press directional arrows. Can do via Hid keys, but users are slower than bots at even the default code entry.
             char[] codeChars = $"{code:00000000}".ToCharArray();
             HidKeyboardKey[] keysToPress = new HidKeyboardKey[codeChars.Length+1];
             for (int i = 0; i < codeChars.Length; ++i)
@@ -167,8 +128,22 @@ namespace SysBot.Pokemon
             keysToPress[codeChars.Length] = HidKeyboardKey.Return;
 
             await Connection.SendAsync(SwitchCommand.TypeMultipleKeys(keysToPress), token).ConfigureAwait(false);
-            await Task.Delay((17 * 8) + 0_300, token).ConfigureAwait(false);
+            await Task.Delay((HidWaitTime * 8) + 0_100, token).ConfigureAwait(false);
             // Confirm Code outside of this method (allow synchronization)
+        }
+
+        public async Task Unban(CancellationToken token)
+        {
+            Log("Soft ban detected, unbanning.");
+            // Write the float value to 0.
+            var data = BitConverter.GetBytes(0);
+            await PointerPoke(data, Offsets.UnionWorkPenaltyPointer, token).ConfigureAwait(false);
+        }
+
+        public async Task<bool> CheckIfSoftBanned(CancellationToken token)
+        {
+            var data = await SwitchConnection.PointerPeek(4, Offsets.UnionWorkPenaltyPointer, token).ConfigureAwait(false);
+            return BitConverter.ToUInt32(data, 0) != 0;
         }
 
         public async Task ReOpenGame(PokeTradeHubConfig config, CancellationToken token)
@@ -220,8 +195,8 @@ namespace SysBot.Pokemon
             var timer = 60_000;
             while (!await IsPlayerInstantiated(token).ConfigureAwait(false))
             {
-                await Task.Delay(0_200, token).ConfigureAwait(false);
-                timer -= 0_250;
+                await Task.Delay(1_000, token).ConfigureAwait(false);
+                timer -= 1_000;
                 // We haven't made it back to overworld after a minute, so press A every 6 seconds hoping to restart the game.
                 // Don't risk it if hub is set to avoid updates.
                 if (timer <= 0 && !timing.AvoidSystemUpdate)
@@ -233,38 +208,58 @@ namespace SysBot.Pokemon
                 }
             }
 
-            await Task.Delay(1_200, token).ConfigureAwait(false);
+            await Task.Delay(5_000, token).ConfigureAwait(false);
             Log("Back in the overworld!");
         }
 
-        private async Task<bool> IsPlayerInstantiated(CancellationToken token)
+        protected async Task<bool> IsPlayerInstantiated(CancellationToken token)
         {
-            var xVal = await PointerPeek(4, Offsets.PlayerPositionPointer, token).ConfigureAwait(false); // float but we only care whether or not it is all 0s
+            var xVal = await SwitchConnection.PointerPeek(4, Offsets.PlayerPositionPointer, token).ConfigureAwait(false); // float but we only care whether or not it is all 0s
             var xParsed = BitConverter.ToUInt32(xVal, 0);
             return xParsed != 0;
         }
 
-        public async Task<bool> IsInBox(CancellationToken token)
+        private async Task<uint> GetSceneID(CancellationToken token)
         {
-            var byt = await PointerPeek(1, Offsets.SubMenuStatePointer, token).ConfigureAwait(false);
-            return byt[0] == SubMenuState_Box;
+            var xVal = await SwitchConnection.PointerPeek(1, Offsets.SceneIDPointer, token).ConfigureAwait(false);
+            var xParsed = BitConverter.ToUInt32(xVal, 0);
+            return xParsed;
         }
 
-        public async Task<UnitySceneStream> GetUnitySceneStream(CancellationToken token)
+        private async Task<bool> IsSceneID(uint expected, CancellationToken token) => await GetSceneID(token).ConfigureAwait(false) == expected;
+
+        public async Task<bool> IsTrue(IEnumerable<long> jumps, CancellationToken token)
         {
-            var byt = await PointerPeek(1, Offsets.UnitySceneStreamPointer, token).ConfigureAwait(false);
-            return PokeDataOffsetsBS_BD.GetUnitySceneStream(byt[0]);
+            var data = await SwitchConnection.PointerPeek(1, jumps, token).ConfigureAwait(false);
+            return data[0] == 1;
+        }
+
+        public async Task<bool> IsInBox(CancellationToken token)
+        {
+            return await GetSubMenuState(token).ConfigureAwait(false) == SubMenuState.Box;
         }
 
         public async Task<SubMenuState> GetSubMenuState(CancellationToken token)
         {
-            var byt = await PointerPeek(1, Offsets.SubMenuStatePointer, token).ConfigureAwait(false);
-            return PokeDataOffsetsBS_BD.GetSubMenuState(byt[0]);
+            return BasePokeDataOffsetsBS.GetSubMenuState((await SwitchConnection.PointerPeek(1, Offsets.SubMenuStatePointer, token).ConfigureAwait(false))[0]);
+        }
+
+        // Whenever we're in a trade, this pointer will be loaded, otherwise 0
+        public async Task<bool> IsPartnerParamLoaded(CancellationToken token)
+        {
+            var byt = await SwitchConnection.PointerPeek(8, Offsets.LinkTradePartnerParamPointer, token).ConfigureAwait(false);
+            return BitConverter.ToUInt64(byt, 0) != 0;
+        }
+
+        public async Task<UnitySceneStream> GetUnitySceneStream(CancellationToken token)
+        {
+            var byt = await SwitchConnection.PointerPeek(1, Offsets.UnitySceneStreamPointer, token).ConfigureAwait(false);
+            return BasePokeDataOffsetsBS.GetUnitySceneStream(byt[0]);
         }
 
         public async Task<Vector3> GetPosition(CancellationToken token)
         {
-            var pos = await PointerPeek(12, Offsets.PlayerPositionPointer, token).ConfigureAwait(false); // y is height in Unity
+            var pos = await SwitchConnection.PointerPeek(12, Offsets.PlayerPositionPointer, token).ConfigureAwait(false); // y is height in Unity
             return new Vector3(BitConverter.ToSingle(pos, 0), BitConverter.ToSingle(pos, 4), BitConverter.ToSingle(pos, 8));
         }
 
@@ -279,7 +274,7 @@ namespace SysBot.Pokemon
 
         public async Task<Vector3> GetRotationEuler(CancellationToken token)
         {
-            var pos = await PointerPeek(16, Offsets.PlayerRotationPointer, token).ConfigureAwait(false);
+            var pos = await SwitchConnection.PointerPeek(16, Offsets.PlayerRotationPointer, token).ConfigureAwait(false);
             Quaternion rotation = new Quaternion(BitConverter.ToSingle(pos, 0), BitConverter.ToSingle(pos, 4), BitConverter.ToSingle(pos, 8), BitConverter.ToSingle(pos, 12));
             return rotation.ToEulerAngles();
         }
@@ -296,7 +291,14 @@ namespace SysBot.Pokemon
             await PointerPoke(allBytes, Offsets.PlayerRotationPointer, token).ConfigureAwait(false);
         }
 
-        public async Task<ulong> GetTradePartnerNID(CancellationToken token) => BitConverter.ToUInt64(await PointerPeek(sizeof(ulong), Offsets.LinkTradePartnerNIDPointer, token).ConfigureAwait(false), 0);
+        public async Task<ulong> GetTradePartnerNID(CancellationToken token) => BitConverter.ToUInt64(await SwitchConnection.PointerPeek(sizeof(ulong), Offsets.LinkTradePartnerNIDPointer, token).ConfigureAwait(false), 0);
+
+        public async Task<bool> IsKeyboardOpen(CancellationToken token)
+        {
+            var commandBytes = Encoding.ASCII.GetBytes("isProgramRunning 0x0100000000001008\r\n");
+            var isRunning = Encoding.ASCII.GetString(await SwitchConnection.ReadRaw(commandBytes, 17, token).ConfigureAwait(false));
+            return ulong.Parse(isRunning.Trim(), System.Globalization.NumberStyles.HexNumber) == 1;
+        }
     }
 
     public class Vector3
@@ -324,6 +326,15 @@ namespace SysBot.Pokemon
                 Vector3 p = (Vector3)obj;
                 return (X == p.X) && (Y == p.Y) && (Z == p.Z);
             }
+        }
+
+        public override int GetHashCode() // VS Automatic Generation
+        {
+            int hashCode = -307843816;
+            hashCode = hashCode * -1521134295 + X.GetHashCode();
+            hashCode = hashCode * -1521134295 + Y.GetHashCode();
+            hashCode = hashCode * -1521134295 + Z.GetHashCode();
+            return hashCode;
         }
     }
 

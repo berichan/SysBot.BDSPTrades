@@ -123,7 +123,7 @@ namespace SysBot.Pokemon
 
         public IEnumerable<string> GetUserList(string fmt)
         {
-            return UsersInQueue.Select(z => string.Format(fmt, z.Trade.ID, z.Trade.Code, z.Trade.Type, z.Username, (Species)z.Trade.TradeData.Species));
+            return UsersInQueue.Select(z => string.Format(fmt, z.Trade.ID, z.Trade.Code, z.Trade.Type, z.Username, z.Trade.TradeData.CollateSpecies()));
         }
 
         public IList<TradeEntry<T>> GetIsUserQueued(Func<TradeEntry<T>, bool> match)

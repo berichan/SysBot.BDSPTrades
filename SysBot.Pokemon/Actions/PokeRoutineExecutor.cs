@@ -3,6 +3,7 @@ using SysBot.Base;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace SysBot.Pokemon
 {
@@ -14,7 +15,7 @@ namespace SysBot.Pokemon
 
         public abstract Task<T> ReadPokemon(ulong offset, CancellationToken token);
         public abstract Task<T> ReadPokemon(ulong offset, int size, CancellationToken token);
-        public abstract Task<T> ReadPokemonPointer(long[] jumps, int size, CancellationToken token);
+        public abstract Task<T> ReadPokemonPointer(IEnumerable<long> jumps, int size, CancellationToken token);
         public abstract Task<T> ReadBoxPokemon(int box, int slot, CancellationToken token);
 
         public async Task<T?> ReadUntilPresent(ulong offset, int waitms, int waitInterval, int size, CancellationToken token)
@@ -31,7 +32,7 @@ namespace SysBot.Pokemon
             return null;
         }
 
-        public async Task<T?> ReadUntilPresentPointer(long[] jumps, int waitms, int waitInterval, int size, CancellationToken token)
+        public async Task<T?> ReadUntilPresentPointer(IReadOnlyList<long> jumps, int waitms, int waitInterval, int size, CancellationToken token)
         {
             int msWaited = 0;
             while (msWaited < waitms)
@@ -43,6 +44,12 @@ namespace SysBot.Pokemon
                 msWaited += waitInterval;
             }
             return null;
+        }
+
+        protected async Task<(bool, ulong)> ValidatePointerAll(IEnumerable<long> jumps, CancellationToken token)
+        {
+            var solved = await SwitchConnection.PointerAll(jumps, token).ConfigureAwait(false);
+            return (solved != 0, solved);
         }
 
         public static void DumpPokemon(string folder, string subfolder, T pk)

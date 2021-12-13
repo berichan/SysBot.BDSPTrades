@@ -86,7 +86,7 @@ namespace SysBot.Pokemon.Discord
             var name = detail.Trainer.TrainerName;
 
             // show detail of trade if possible
-            var nick = detail.TradeData.Nickname;
+            var nick = detail.FirstData.Nickname;
             if (!string.IsNullOrEmpty(nick))
                 name += $" - {nick}";
             return name;

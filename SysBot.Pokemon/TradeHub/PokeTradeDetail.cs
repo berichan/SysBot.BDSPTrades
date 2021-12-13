@@ -18,7 +18,10 @@ namespace SysBot.Pokemon
         public readonly int Code;
 
         /// <summary> Data to be traded </summary>
-        public TPoke TradeData;
+        public TPoke[] TradeData;
+
+        /// <summary> First data to be traded </summary>
+        public TPoke FirstData { get => TradeData[0]; set => TradeData[0] = value; }
 
         /// <summary> Trainer details </summary>
         public readonly PokeTradeTrainerInfo Trainer;
@@ -44,7 +47,14 @@ namespace SysBot.Pokemon
         public bool IsProcessing;
 
         public PokeTradeDetail(TPoke pkm, PokeTradeTrainerInfo info, IPokeTradeNotifier<TPoke> notifier, PokeTradeType type, int code, bool favored = false)
+            :this(new TPoke[1] { pkm }, info, notifier, type, code, favored)
         {
+        }
+
+        public PokeTradeDetail(TPoke[] pkm, PokeTradeTrainerInfo info, IPokeTradeNotifier<TPoke> notifier, PokeTradeType type, int code, bool favored = false)
+        {
+            if (pkm == null || pkm.Length < 1)
+                throw new Exception("Sending data is empty.");
             ID = Interlocked.Increment(ref CreatedCount) % 3000;
             Code = code;
             TradeData = pkm;
@@ -88,9 +98,9 @@ namespace SysBot.Pokemon
 
         public string Summary(int queuePosition)
         {
-            if (TradeData.Species == 0)
+            if (FirstData.Species == 0)
                 return $"{queuePosition:00}: {Trainer.TrainerName}";
-            return $"{queuePosition:00}: {Trainer.TrainerName}, {(Species)TradeData.Species}";
+            return $"{queuePosition:00}: {Trainer.TrainerName}, {TradeData.CollateSpecies()}";
         }
     }
 }

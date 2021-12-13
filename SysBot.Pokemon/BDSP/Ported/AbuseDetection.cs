@@ -130,6 +130,7 @@ namespace SysBot.Pokemon
 
         public bool LogUser(T hashid, ulong nid, string id, string plaintext, string toPing)
         {
+            bool safe = true;
             if (!string.IsNullOrWhiteSpace(id))
             {
                 var exists = UserInfoList.FirstOrDefault(x => x.HashIdentifier != null && x.HashIdentifier.Equals(hashid) && x.NIDIdentifier.Equals(nid) && x.Identity.Equals(id));
@@ -140,16 +141,18 @@ namespace SysBot.Pokemon
                 }
 
                 var altExists = UserInfoList.FirstOrDefault(x => x.HashIdentifier != null && (x.HashIdentifier.Equals(hashid) || x.NIDIdentifier.Equals(nid)) && !x.Identity.Equals(id));
-                if (altExists != default && altExists.Identity != id)
+                bool allNidsAreZero = altExists != default && altExists.NIDIdentifier == 0 && nid == 0;
+                if (altExists != default && altExists.Identity != id && !allNidsAreZero)
                 {
                     LogUtil.LogInfo($"{toPing} Found someone using multiple accounts {plaintext} ({id}) exists with at least one previous identity: {altExists.Identity} ({altExists.PlaintextName})", nameof(AbuseDetection<T>));
+                    safe = false;
                 }
             }
 
             try { UpdateGlobalBanList(); } catch (Exception e) { LogUtil.LogInfo($"Unable to load banlist: {e.Message}", nameof(AbuseDetection<T>)); }
 
             var banned = GlobalBanList.FirstOrDefault(x => x.HashIdentifier != null && (x.HashIdentifier.Equals(hashid) || x.NIDIdentifier.Equals(nid) || x.Identity.Equals(id)));
-            return banned == null;
+            return banned == null && safe;
         }
 
         public bool Remove(string identity)

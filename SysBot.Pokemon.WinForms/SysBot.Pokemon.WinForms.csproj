@@ -20,19 +20,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="LibUsbDotNet" Version="2.2.29" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
-    <PackageReference Include="PKHeX.Core" Version="21.11.21" />
+    <PackageReference Include="NLog" Version="4.7.12" />
+    <PackageReference Include="PKHeX.Core" Version="21.11.27" />
     <PackageReference Include="System.Resources.Extensions" Version="5.0.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SysBot.Base\SysBot.Base.csproj" />
     <ProjectReference Include="..\SysBot.Pokemon.Discord\SysBot.Pokemon.Discord.csproj" />
     <ProjectReference Include="..\SysBot.Pokemon.Twitch\SysBot.Pokemon.Twitch.csproj" />
     <ProjectReference Include="..\SysBot.Pokemon.Web\SysBot.Pokemon.Web.csproj" />
-    <ProjectReference Include="..\SysBot.Pokemon.YouTube\SysBot.Pokemon.YouTube.csproj" />
     <ProjectReference Include="..\SysBot.Pokemon\SysBot.Pokemon.csproj" />
-    <ProjectReference Include="..\SysBot.Pokemon.Z3\SysBot.Pokemon.Z3.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="$(TargetFramework.StartsWith('net4')) AND '$(Configuration)' == 'Release' ">
@@ -62,6 +61,12 @@
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
     </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="SysBot.Base.dll">
+      <HintPath>deps\SysBot.Base.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>

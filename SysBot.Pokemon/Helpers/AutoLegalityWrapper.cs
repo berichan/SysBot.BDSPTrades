@@ -51,22 +51,22 @@ namespace SysBot.Pokemon
             if (!string.IsNullOrWhiteSpace(externalSource) && Directory.Exists(externalSource))
                 TrainerSettings.LoadTrainerDatabaseFromPath(externalSource);
 
-            SaveFile GetFallbackBlank(int generation)
-            {
-                var blankSav = SaveUtil.GetBlankSAV(generation, OT);
-                blankSav.Language = lang;
-                blankSav.TID = TID;
-                blankSav.SID = SID;
-                blankSav.OT = OT;
-                return blankSav;
-            }
-
             for (int i = 1; i < PKX.Generation + 1; i++)
             {
-                var fallback = GetFallbackBlank(i);
-                var exist = TrainerSettings.GetSavedTrainerData(i, fallback);
-                if (ReferenceEquals(exist, fallback))
-                    TrainerSettings.Register(fallback);
+                var versions = GameUtil.GetVersionsInGeneration(i, PKX.Generation);
+                foreach (var v in versions)
+                {
+                    var fallback = new SimpleTrainerInfo(v)
+                    {
+                        Language = lang,
+                        TID = TID,
+                        SID = SID,
+                        OT = OT,
+                    };
+                    var exist = TrainerSettings.GetSavedTrainerData(v, i, fallback);
+                    if (exist is SimpleTrainerInfo) // not anything from files; this assumes ALM returns SimpleTrainerInfo for non-user-provided fake templates.
+                        TrainerSettings.Register(fallback);
+                }
             }
 
             var trainer = TrainerSettings.GetSavedTrainerData(PKX.Generation);
@@ -97,6 +97,7 @@ namespace SysBot.Pokemon
             MysteryGift g => !g.EggEncounter && g switch
             {
                 WC8 wc8 => wc8.GetHasOT(pkm.Language),
+                WB8 wb8 => wb8.GetHasOT(pkm.Language),
                 { Generation: >= 5 } gift => gift.OT_Name.Length > 0,
                 _ => true,
             },
@@ -105,6 +106,8 @@ namespace SysBot.Pokemon
 
         public static ITrainerInfo GetTrainerInfo<T>() where T : PKM, new()
         {
+            if (typeof(T) == typeof(PK8))
+                return TrainerSettings.GetSavedTrainerData(GameVersion.SWSH, 8);
             if (typeof(T) == typeof(PB8))
                 return TrainerSettings.GetSavedTrainerData(GameVersion.BDSP, 8);
 

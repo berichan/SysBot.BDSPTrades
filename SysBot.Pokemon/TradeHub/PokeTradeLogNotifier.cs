@@ -9,12 +9,12 @@ namespace SysBot.Pokemon
     {
         public void TradeInitialize(PokeRoutineExecutor<T> routine, PokeTradeDetail<T> info)
         {
-            LogUtil.LogInfo($"Starting trade loop for {info.Trainer.TrainerName}, sending {(Species)info.TradeData.Species}", routine.Connection.Label);
+            LogUtil.LogInfo($"Starting trade loop for {info.Trainer.TrainerName}, sending {info.TradeData.CollateSpecies()}", routine.Connection.Label);
         }
 
         public void TradeSearching(PokeRoutineExecutor<T> routine, PokeTradeDetail<T> info)
         {
-            LogUtil.LogInfo($"Searching for trade with {info.Trainer.TrainerName}, sending {(Species)info.TradeData.Species}", routine.Connection.Label);
+            LogUtil.LogInfo($"Searching for trade with {info.Trainer.TrainerName}, sending {info.TradeData.CollateSpecies()}", routine.Connection.Label);
         }
 
         public void TradeCanceled(PokeRoutineExecutor<T> routine, PokeTradeDetail<T> info, PokeTradeResult msg)
@@ -25,7 +25,7 @@ namespace SysBot.Pokemon
 
         public void TradeFinished(PokeRoutineExecutor<T> routine, PokeTradeDetail<T> info, T result)
         {
-            LogUtil.LogInfo($"Finished trading {info.Trainer.TrainerName} {(Species)info.TradeData.Species} for {(Species)result.Species}", routine.Connection.Label);
+            LogUtil.LogInfo($"Finished trading {info.Trainer.TrainerName} {info.TradeData.CollateSpecies()} for {(Species)result.Species}", routine.Connection.Label);
             OnFinish?.Invoke(routine);
         }
 

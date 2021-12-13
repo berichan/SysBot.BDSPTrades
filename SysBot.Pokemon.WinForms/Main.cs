@@ -9,7 +9,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Newtonsoft.Json.Serialization;
-using SysBot.Pokemon.Z3;
 
 namespace SysBot.Pokemon.WinForms
 {
