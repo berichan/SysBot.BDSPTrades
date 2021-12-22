@@ -15,7 +15,7 @@ namespace SysBot.Pokemon
         /// <summary>
         /// Trade Code
         /// </summary>
-        public readonly int Code;
+        public int Code;
 
         /// <summary> Data to be traded </summary>
         public TPoke[] TradeData;

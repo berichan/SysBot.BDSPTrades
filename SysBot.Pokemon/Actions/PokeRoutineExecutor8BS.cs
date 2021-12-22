@@ -79,17 +79,29 @@ namespace SysBot.Pokemon
             else throw new Exception($"Title for {title} is unknown.");
 
             // generate a fake savefile
-            var myStatusOffset = await SwitchConnection.PointerAll(Offsets.MainSavePointer, token).ConfigureAwait(false);
-
-            // we only need config and mystatus regions
-            const ulong offs = 0x79B74;
-            var savMyStatus = await SwitchConnection.ReadBytesAbsoluteAsync(myStatusOffset + offs, 0x40 + 0x50, token).ConfigureAwait(false);
-            var bytes = (new byte[offs]).Concat(savMyStatus).ToArray();
-
-            var sav = new SAV8BS(bytes);
+            var sav = await GetFakeTrainerSAV(token).ConfigureAwait(false);
 
             InitSaveData(sav);
 
+            return sav;
+        }
+
+        public async Task<SAV8BS> GetFakeTrainerSAV(CancellationToken token)
+        {
+            var sav = new SAV8BS();
+            var info = sav.MyStatus;
+
+            // Set the OT.
+            var name = await SwitchConnection.PointerPeek(TradePartnerBS.MaxByteLengthStringObject, Offsets.MyStatusTrainerPointer, token).ConfigureAwait(false);
+            info.OT = TradePartnerBS.ReadStringFromRAMObject(name);
+
+            // Set the TID, SID, and Language
+            var id = await SwitchConnection.PointerPeek(10, Offsets.MyStatusTIDPointer, token).ConfigureAwait(false);
+            info.TID = BitConverter.ToUInt16(id, 0);
+            info.SID = BitConverter.ToUInt16(id, 2);
+
+            var lang = await SwitchConnection.PointerPeek(1, Offsets.ConfigLanguagePointer, token).ConfigureAwait(false);
+            sav.Language = lang[0];
             return sav;
         }
 
@@ -232,16 +244,6 @@ namespace SysBot.Pokemon
         {
             var data = await SwitchConnection.PointerPeek(1, jumps, token).ConfigureAwait(false);
             return data[0] == 1;
-        }
-
-        public async Task<bool> IsInBox(CancellationToken token)
-        {
-            return await GetSubMenuState(token).ConfigureAwait(false) == SubMenuState.Box;
-        }
-
-        public async Task<SubMenuState> GetSubMenuState(CancellationToken token)
-        {
-            return BasePokeDataOffsetsBS.GetSubMenuState((await SwitchConnection.PointerPeek(1, Offsets.SubMenuStatePointer, token).ConfigureAwait(false))[0]);
         }
 
         // Whenever we're in a trade, this pointer will be loaded, otherwise 0

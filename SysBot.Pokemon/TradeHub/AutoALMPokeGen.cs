@@ -21,6 +21,10 @@ namespace SysBot.Pokemon
                 var speciesName = GameInfo.Strings.Species[dex];
                 if ((Species)dex == Species.Giratina && item == 112) // Origin form giratina
                     sb.AppendLine($"{speciesName}-Origin @ {GameInfo.Strings.Item[item]}");
+                else if ((Species)dex == Species.NidoranM)
+                    sb.AppendLine($"Nidoran-M @ {GameInfo.Strings.Item[item]}");
+                else if ((Species)dex == Species.NidoranF)
+                    sb.AppendLine($"Nidoran-F @ {GameInfo.Strings.Item[item]}");
                 else
                     sb.AppendLine($"{speciesName} @ {GameInfo.Strings.Item[item]}");
                 sb.AppendLine($"TID: {tid:000000}");

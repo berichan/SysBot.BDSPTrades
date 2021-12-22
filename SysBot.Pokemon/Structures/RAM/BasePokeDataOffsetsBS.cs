@@ -21,14 +21,15 @@ namespace SysBot.Pokemon
         public abstract IReadOnlyList<long> PlayerMovementPointer { get; }
 
         public abstract IReadOnlyList<long> UnitySceneStreamPointer { get; }
-        public abstract IReadOnlyList<long> SubMenuStatePointer { get; }
 
         public abstract IReadOnlyList<long> SceneIDPointer { get; }
         public abstract IReadOnlyList<long> UnionWorkIsGamingPointer { get; }
         public abstract IReadOnlyList<long> UnionWorkIsTalkingPointer { get; }
         public abstract IReadOnlyList<long> UnionWorkPenaltyPointer { get; }
-        public abstract IReadOnlyList<long> MainSavePointer { get; }
-        public abstract IReadOnlyList<long> ConfigPointer { get; }
+        public abstract IReadOnlyList<long> MyStatusTrainerPointer { get; }
+        public abstract IReadOnlyList<long> MyStatusTIDPointer { get; }
+        public abstract IReadOnlyList<long> ConfigTextSpeedPointer { get; }
+        public abstract IReadOnlyList<long> ConfigLanguagePointer { get; }
 
         // Scene stream bytes
         public const byte UnitySceneStream_LocalUnionRoom = 0x09;
