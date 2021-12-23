@@ -567,7 +567,7 @@ namespace SysBot.Pokemon
                     return;
                 if (BitConverter.ToUInt16(await SwitchConnection.ReadBytesAbsoluteAsync(offs + 4, 2, token).ConfigureAwait(false), 0) != 0)
                     return;
-                await SwitchConnection.WriteBytesAbsoluteAsync(new byte[344], offs, token).ConfigureAwait(false);
+                await SwitchConnection.WriteBytesAbsoluteAsync(new byte[0x148], offs, token).ConfigureAwait(false);
             }
         }
 
