@@ -137,6 +137,7 @@ namespace SysBot.Pokemon
                 if (exists == null)
                 {
                     UserInfoList.Add(new HashNIDIdentifier<T>(hashid, nid, id, plaintext));
+                    LogUtil.LogInfo($"Adding new user: {plaintext} ({id})", nameof(AbuseDetection<T>));
                     SaveAllUserInfo();
                 }
 

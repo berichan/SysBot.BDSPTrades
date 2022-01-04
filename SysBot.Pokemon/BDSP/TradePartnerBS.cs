@@ -15,7 +15,7 @@ namespace SysBot.Pokemon
         public TradePartnerBS(byte[] TIDSID, byte[] trainerNameObject)
         {
             Debug.Assert(TIDSID.Length == 4);
-            var IDHash = BitConverter.ToUInt32(TIDSID, 0);
+            IDHash = BitConverter.ToUInt32(TIDSID, 0);
             TID = $"{IDHash % 1_000_000:000000}";
             SID = $"{IDHash / 1_000_000:0000}";
 
