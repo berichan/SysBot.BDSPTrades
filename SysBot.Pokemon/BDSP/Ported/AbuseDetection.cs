@@ -153,7 +153,7 @@ namespace SysBot.Pokemon
             try { UpdateGlobalBanList(); } catch (Exception e) { LogUtil.LogInfo($"Unable to load banlist: {e.Message}", nameof(AbuseDetection<T>)); }
 
             var banned = GlobalBanList.FirstOrDefault(x => x.HashIdentifier != null && (x.HashIdentifier.Equals(hashid) || x.NIDIdentifier.Equals(nid) || x.Identity.Equals(id)));
-            return banned == null && safe;
+            return banned == null;
         }
 
         public bool Remove(string identity)

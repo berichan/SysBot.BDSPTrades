@@ -1,8 +1,8 @@
 ﻿using SysBot.Base;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using PKHeX.Core;
+using System;
 
 namespace SysBot.Pokemon
 {
@@ -22,8 +22,17 @@ namespace SysBot.Pokemon
             var choice = this[Counter];
             Counter = (Counter + 1) % Count;
             if (Counter == 0 && Randomized)
-                Util.Shuffle(this);
+                Shuffle(this, 0, Count, Util.Rand);
             return choice;
+        }
+
+        public static void Shuffle(IList<T> items, int start, int end, Random rnd)
+        {
+            for (int i = start; i < end; i++)
+            {
+                int index = i + rnd.Next(end - i);
+                (items[index], items[i]) = (items[i], items[index]);
+            }
         }
 
         public T GetRandomSurprise()

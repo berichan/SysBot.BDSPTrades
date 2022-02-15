@@ -1,11 +1,16 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using PKHeX.Core;
+using SysBot.Base;
 
 namespace SysBot.Pokemon.Twitch
 {
     public static class TwitchCommandsHelper<T> where T : PKM, new()
     {
         // Helper functions for commands
-        public static bool AddToWaitingList(string setstring, string display, string username, ulong mUserId, bool sub, out string msg)
+        public static bool AddToWaitingList(string setstring, string display, string username, ulong mUserId, bool sub, bool isRequest, out string msg)
         {
             if (!TwitchBot<T>.Info.GetCanQueue())
             {
@@ -13,29 +18,48 @@ namespace SysBot.Pokemon.Twitch
                 return false;
             }
 
-            var set = ShowdownUtil.ConvertToShowdown(setstring);
-            if (set == null)
+            if (string.IsNullOrWhiteSpace(setstring))
             {
-                msg = $"Skipping trade, @{username}: Empty nickname provided for the species.";
-                return false;
-            }
-            var template = AutoLegalityWrapper.GetTemplate(set);
-            if (template.Species < 1)
-            {
-                msg = $"Skipping trade, @{username}: Please read what you are supposed to type as the command argument.";
-                return false;
-            }
-
-            if (set.InvalidLines.Count != 0)
-            {
-                msg = $"Skipping trade, @{username}: Unable to parse Showdown Set:\n{string.Join("\n", set.InvalidLines)}";
+                msg = $"@{username}: You need to request something!";
                 return false;
             }
 
             try
             {
-                var sav = AutoLegalityWrapper.GetTrainerInfo<T>();
-                PKM pkm = sav.GetLegal(template, out var result);
+                PKM? pkm = null;
+                string result = string.Empty;
+                if (!isRequest)
+                {
+                    var set = ShowdownUtil.ConvertToShowdown(setstring);
+                    if (set == null)
+                    {
+                        msg = $"Skipping trade, @{username}: Empty nickname provided for the species.";
+                        return false;
+                    }
+                    var template = AutoLegalityWrapper.GetTemplate(set);
+                    if (template.Species < 1)
+                    {
+                        msg = $"Skipping trade, @{username}: Please read what you are supposed to type as the command argument.";
+                        return false;
+                    }
+
+                    if (set.InvalidLines.Count != 0)
+                    {
+                        msg = $"Skipping trade, @{username}: Unable to parse Showdown Set:\n{string.Join("\n", set.InvalidLines)}";
+                        return false;
+                    }
+
+                    var sav = AutoLegalityWrapper.GetTrainerInfo<T>();
+                    pkm = sav.GetLegal(template, out result);
+                }
+                else
+                    pkm = RequestUtil<T>.GetPokemonViaNamedRequest(TwitchBot<T>.Hub.Config.Folder.DistributeFolder, setstring, out _);
+
+                if (pkm == null)
+                {
+                    msg = $"Skipping trade, @{username}: Unable to find this request!";
+                    return false;
+                }
 
                 if (!pkm.CanBeTraded())
                 {
@@ -48,10 +72,10 @@ namespace SysBot.Pokemon.Twitch
                     var valid = new LegalityAnalysis(pkm).Valid;
                     if (valid)
                     {
-                        var tq = new TwitchQueue<T>(pk, new PokeTradeTrainerInfo(display, mUserId), username, sub);
+                        var tq = new TwitchQueue<T>(pk, new PokeTradeTrainerInfo(display, mUserId), username, sub, isRequest);
                         TwitchBot<T>.QueuePool.RemoveAll(z => z.UserName == username); // remove old requests if any
                         TwitchBot<T>.QueuePool.Add(tq);
-                        msg = $"@{username} - added to the waiting list. Please whisper your trade code to me! Your request from the waiting list will be removed if you are too slow!";
+                        msg = $"NICE! @{username} - added to the waiting list. Please whisper your 8-digit trade code to me! (whisper this bot, not the streamer)";
                         return true;
                     }
                 }
@@ -60,9 +84,10 @@ namespace SysBot.Pokemon.Twitch
                 msg = $"Skipping trade, @{username}: {reason}";
             }
 #pragma warning disable CA1031 // Do not catch general exception types
-            catch
+            catch (Exception ex)
 #pragma warning restore CA1031 // Do not catch general exception types
             {
+                LogUtil.LogSafe(ex, nameof(TwitchCommandsHelper<T>));
                 msg = $"Skipping trade, @{username}: An unexpected problem occurred.";
             }
             return false;
@@ -74,9 +99,10 @@ namespace SysBot.Pokemon.Twitch
             return GetClearTradeMessage(result);
         }
 
-        public static string ClearTrade(ulong userID)
+        public static string ClearTrade(ulong userID, out bool wasInQueue)
         {
             var result = TwitchBot<T>.Info.ClearTrade(userID);
+            wasInQueue = result != QueueResultRemove.NotInQueue;
             return GetClearTradeMessage(result);
         }
 

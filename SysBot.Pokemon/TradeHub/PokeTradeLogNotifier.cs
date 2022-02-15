@@ -7,6 +7,8 @@ namespace SysBot.Pokemon
 {
     public class PokeTradeLogNotifier<T> : IPokeTradeNotifier<T> where T : PKM, new()
     {
+        public string IdentifierLocator => "BotTrade";
+
         public void TradeInitialize(PokeRoutineExecutor<T> routine, PokeTradeDetail<T> info)
         {
             LogUtil.LogInfo($"Starting trade loop for {info.Trainer.TrainerName}, sending {info.TradeData.CollateSpecies()}", routine.Connection.Label);
@@ -48,6 +50,15 @@ namespace SysBot.Pokemon
             LogUtil.LogInfo(message, routine.Connection.Label);
         }
 
+        public void SendReminder(int position, string message)
+        {
+
+        }
+
         public Action<PokeRoutineExecutor<T>>? OnFinish { get; set; }
+
+        public int QueueSizeEntry => 1;
+
+        public bool ReminderSent => true;
     }
 }

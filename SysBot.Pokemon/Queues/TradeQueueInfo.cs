@@ -36,13 +36,14 @@ namespace SysBot.Pokemon
                 var entry = UsersInQueue[index];
                 var inQueue = UsersInQueue.Count(z => z.Type == entry.Type); //incase I change it back ig
 
-                return new QueueCheckResult<T>(true, entry, index+1, inQueue);
+                return new QueueCheckResult<T>(true, entry, index + 1, inQueue);
             }
         }
 
-        public string GetPositionString(ulong uid)
+        public string GetPositionString(ulong uid, out bool isInQueue)
         {
             var check = CheckPosition(uid);
+            isInQueue = check.InQueue;
             return check.GetMessage();
         }
 

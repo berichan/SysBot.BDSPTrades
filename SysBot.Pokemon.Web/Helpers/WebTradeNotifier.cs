@@ -12,12 +12,16 @@ namespace SysBot.Pokemon.Web
 {
     public class WebTradeNotifier<T> : IPokeTradeNotifier<T> where T : PKM, new()
     {
+        public string IdentifierLocator => "Web";
         private T Data { get; }
         private PokeTradeTrainerInfo Info { get; }
         private int Code { get; }
         private IWebNotify<T> WebNotify { get; }
         private T Result { get; set; }
         private string OtherTrainer { get; set; } = string.Empty;
+        public int QueueSizeEntry => -1;
+
+        public bool ReminderSent => true;
 
         public WebTradeNotifier(T data, PokeTradeTrainerInfo info, int code, IWebNotify<T> notifier)
         {
@@ -91,5 +95,10 @@ namespace SysBot.Pokemon.Web
 
         private void NotifyServerOfTradeInfo(SeedSearchResult r)
             => WebNotify.NotifyServerOfSeedInfo(r, Result);
+
+        public void SendReminder(int position, string message)
+        {
+
+        }
     }
 }
