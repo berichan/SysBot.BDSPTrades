@@ -286,7 +286,7 @@ namespace SysBot.Pokemon
             var tradePartner = await GetTradePartnerInfo(token).ConfigureAwait(false);
             var tradePartnerNID = await GetTradePartnerNID(token).ConfigureAwait(false);
 
-            bool IsSafe = poke.Trainer.ID == 0 || tradePartner.IDHash == 0 || NewAntiAbuse.Instance.LogUser(tradePartner.IDHash, tradePartnerNID, poke.Trainer.ID.ToString(), poke.Trainer.TrainerName, Hub.Config.Trade.MultiAbuseEchoMention);
+            bool IsSafe = true;// poke.Trainer.ID == 0 || tradePartner.IDHash == 0 || NewAntiAbuse.Instance.LogUser(tradePartner.IDHash, tradePartnerNID, poke.Trainer.ID.ToString(), poke.Trainer.TrainerName, Hub.Config.Trade.MultiAbuseEchoMention);
             if (!IsSafe)
             {
                 Log($"Found known abuser: {tradePartner.TrainerName}-{tradePartner.SID}-{tradePartner.TID} ({poke.Trainer.TrainerName}) (NID: {tradePartnerNID})");
@@ -546,6 +546,7 @@ namespace SysBot.Pokemon
                 await Click(Y, 1_000, token).ConfigureAwait(false);
                 
             await Click(A, 0_450,token).ConfigureAwait(false);
+            await Click(DDOWN, 0_450, token).ConfigureAwait(false);
             await Click(DDOWN, 0_450, token).ConfigureAwait(false);
             await Click(A, 0_100, token).ConfigureAwait(false);
 
