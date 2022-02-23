@@ -1,7 +1,9 @@
-﻿using Discord;
+﻿using System;
+using Discord;
 using Discord.WebSocket;
 using PKHeX.Core;
 using System.Threading.Tasks;
+using SysBot.Base;
 
 namespace SysBot.Pokemon.Discord
 {
@@ -34,8 +36,9 @@ namespace SysBot.Pokemon.Discord
                 var msg = $"Here's your ({result}) legalized PKM for {spec} ({la.EncounterOriginal.Name})!";
                 await channel.SendPKMAsync(pkm, msg + $"\n{ReusableActions.GetFormattedShowdownText(pkm)}").ConfigureAwait(false);
             }
-            catch
+            catch (Exception ex)
             {
+                LogUtil.LogSafe(ex, nameof(AutoLegalityExtensionsDiscord));
                 var msg = $"Oops! An unexpected problem happened with this Showdown Set:\n```{string.Join("\n", set.GetSetLines())}```";
                 await channel.SendMessageAsync(msg).ConfigureAwait(false);
             }
