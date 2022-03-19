@@ -505,7 +505,7 @@ namespace SysBot.Pokemon
             await Click(DDOWN, 0_350, token).ConfigureAwait(false);
             await Click(DDOWN, 0_300, token).ConfigureAwait(false);
 
-            int numTries = 40;
+            int numTries = 56;
             Log($"Awaiting keyboard open...");
             while (!await IsKeyboardOpen(token).ConfigureAwait(false))
             {
